@@ -45,18 +45,18 @@ int main()
     auto freq = 1760.0;
     constexpr float slideFactor = 1.0 / 1.000027;
     auto amplitude = 1.0;
-	for (auto k=0; k<gBufferLen; k++)
-	{
+    for (auto k=0; k<gBufferLen; k++)
+    {
         phase += gTwoPi * freq / gSampleRate;
-		buffer[k] = amplitude * asin(sin(phase));
+        buffer[k] = amplitude * asin(sin(phase));
         freq *= slideFactor;
         amplitude *= slideFactor;
-	}
+    }
 
     // 4) then write the audio data to the driver
     printf("outputting audio\n");
-	snd_pcm_writei(handle, buffer, gBufferLen);
-		
+    snd_pcm_writei(handle, buffer, gBufferLen);
+        
     snd_pcm_close(handle);
     return 0;
 }
