@@ -19,10 +19,11 @@ hearing the sweep!
 # Writing and Cross Compiling Audio Programs For Embedded Linux
 
 This post is more of a journal entry masquerading as a tutorial. For some time, I have wanted to
-upgrade my very limited embedded systems chops and start making things beep. From some other projects
-I had a Beaglebone Black lying around and I wanted to use it to learn:
-- How to write ALSA programs (a Linux audio API)
-- How to cross-compile for an embedded platform
+upgrade my very limited embedded systems chops and start making things bleep and boop. From some other projects
+I just had a Beaglebone Black lying around and I wanted to use it to learn:
+
+- How to write ALSA audio programs (a Linux audio API)
+- How to cross-compile them for an embedded platform
 - How to connect an external DAC to get some audio out without a full-blown USB audio interface or HDMI monitor
 
 I had trouble finding articles that spelled this stuff out for a beginner embedded systems programmer,
@@ -36,14 +37,48 @@ so now that I got it up an running, here's what worked for me!
 - Jumper wires and breadboard
 - Host computer running Debian Stretch (I used VMWare on macOS, but a native Linux box would have been preferable :) )
 
-I chose I2S mainly because it is yet another technology I have been meaning to learn and it leaves open 
+I chose I2S (Inter-IC Sound) protocol over USB or SPI mainly because it is yet another technology I have been meaning to learn and it leaves open 
 a USB port to be used by another input device (planning to use it for USB MIDI in a future project). That 
 said, it turns out I2S output on the Beaglebone Black is actually a little wonky. Unless you use an
-external clock, you are limited to the 48kHz family of sample rates ([see here](https://hifiduino.wordpress.com/2014/03/10/beaglebone-black-for-audio/)). This was fine for my purposes, but it is an
-unfortunate drawback. The I2S pins are mainly used for the HDMI output, which [this article](https://www.raspberry-pi-geek.com/Archive/2013/02/HDMI-and-the-BeagleBone-Black-Multimedia-Environment) sheds some
+external clock, you are limited to the 48kHz family of sample rates ([see here](https://hifiduino.wordpress.com/2014/03/10/beaglebone-black-for-audio/)). 
+This was fine for my purposes, but it is an unfortunate drawback. The I2S pins are mainly used for the HDMI output, which 
+[this article](https://www.raspberry-pi-geek.com/Archive/2013/02/HDMI-and-the-BeagleBone-Black-Multimedia-Environment) sheds some
 helpful light upon.
 
 # Initial Host Setup
+
+
+## What is cross-compiling and why am I suggesting we do it?
+
+In order to develop an ALSA program on a desktop computer (the "host") and have it run on an embedded device like the Beaglebone (the "target"),
+we need to set up a "cross compilation" environment. Note that cross compilation isn't strictly necessary to develop 
+applications for embedded Linux - another option is to "compile on target", which means you connect to your embedded device
+over SSH/UART/etc and use `gcc` on the board to compile it there directly. This is leagues simpler than cross-compilation,
+but for larger codebases the process may be time-prohibitive (one time my poor Beaglebone spent 20+ hours compiling an audio engine) or there might
+simply not be enough memory on the device, causing `gcc` to error out. That's definitely not the case with the 
+toy program in this article, but I wanted to describe how to cross compile anyhow so you can apply this process to
+work with larger audio applications. It may help to learn more about cross compiling [here](https://landley.net/writing/docs/cross-compiling.html).
+
+## Pick a host Linux distro
+
+Before anything, you need to decide which type of host setup is best for your cross-compilation scenario.
+As it turns out, this decision is not particularly straightforward. One thing that is standard at least is that
+one will have an easier time using a Linux host -- macOS and Windows are possible as well, but when cross-compiling
+for embedded Linux (as opposed to a "bare metal" embedded system), using a non-Linux host further muddies an 
+already complicated process. 
+
+From there, if you have chosen to use Linux, you need to choose a Linux distro suitable for cross-compilation. 
+When it comes to cross compilation, not all distros are built equal-- historically, Debian was considered
+Not Great for cross compilation. However, since Debian Stretch (9.x), [multi-arch](https://wiki.debian.org/Multiarch/HOWTO) 
+support has made it a much more viable option, allowing you to install ARM system libraries/headers/compiler/linker 
+(a "[cross toolchain](https://elinux.org/Toolchains)") for cross compiling without messing up your native system 
+libraries in `/usr/local/lib` etc.
+
+One other consideration to take into account which distro you have on the target system, because obtaining a pre-built 
+cross toolchain for an older compiler can be a pain. Tools like Yocto and Docker can make this aspect more manageable, but for me
+it worked to specifically use Debian Stretch, since that was installed on my Beaglebone as well -- when I used the 
+
+
 
 Copped out: chose a Linux distro that has the same std libs as the host
 This article won’t go over these details, but there are ways to sandbox/create a custom linux 
