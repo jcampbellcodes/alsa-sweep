@@ -47,15 +47,14 @@ helpful light upon.
 
 # Initial Host Setup
 
-
 ## What is cross-compiling and why am I suggesting we do it?
 
 In order to develop an ALSA program on a desktop computer (the "host") and have it run on an embedded device like the Beaglebone (the "target"),
-we need to set up a "cross compilation" environment. Note that cross compilation isn't strictly necessary to develop 
-applications for embedded Linux - another option is to "compile on target", which means you connect to your embedded device
-over SSH/UART/etc and use `gcc` on the board to compile it there directly. This is leagues simpler than cross-compilation,
-but for larger codebases the process may be time-prohibitive (one time my poor Beaglebone spent 20+ hours compiling an audio engine) or there might
-simply not be enough memory on the device, causing `gcc` to error out. That's definitely not the case with the 
+we need to set up a "cross compilation" environment, allowing you to compile your programs on your powerful host that can run on your target. 
+Note that cross compilation isn't strictly necessary to develop  applications for embedded Linux - another option is to "compile on target", 
+which means you connect to your embedded device over SSH/UART/etc and use `gcc` on the board to compile it there directly. This is, in general,
+leagues simpler than cross-compilation, but for larger codebases the process may be time-prohibitive (one time my poor Beaglebone spent 20+ 
+hours compiling an audio engine) or there might simply not be enough memory on the device, causing `gcc` to error out. That's definitely not the case with the 
 toy program in this article, but I wanted to describe how to cross compile anyhow so you can apply this process to
 work with larger audio applications. It may help to learn more about cross compiling [here](https://landley.net/writing/docs/cross-compiling.html).
 
@@ -76,44 +75,85 @@ libraries in `/usr/local/lib` etc.
 
 One other consideration to take into account which distro you have on the target system, because obtaining a pre-built 
 cross toolchain for an older compiler can be a pain. Tools like Yocto and Docker can make this aspect more manageable, but for me
-it worked to specifically use Debian Stretch, since that was installed on my Beaglebone as well -- when I used the 
+it worked to specifically use Debian Stretch, since that was installed on my Beaglebone as well -- originally I was using 
+Debian Buster (10) and couldn't find a clean way to get multi-arch support for armhf with the specific version of
+gcc I needed (6.3.0), and so my program failed to run on the board. I have a gut feeling that I should have been able to
+make this work with Debian Buster (or any Linux distro) so feel free to reach out if you have recommendations!
 
+So: assuming you have Debian Stretch on your Beaglebone, go get an [amd64 image of Debian Stretch](https://www.debian.org/distrib/netinst#smallcd)
+and install it either in a [virtual machine](https://www.virtualbox.org/) or natively if you are so inclined.
 
-
-Copped out: chose a Linux distro that has the same std libs as the host
-This article won’t go over these details, but there are ways to sandbox/create a custom linux 
-distro (Yocto is popular, Docker images may also work for cross compilation)
-My Beaglebone happened to have Debian 9 on it, so I used a Debian 9 host. When I used Debian 10, 
-I had trouble getting an older gcc cross compile toolchain for Beaglebone -- the one with
-arm-linux-gnueabihf was too new and created binaries that expected the wrong C libs
-
-debian stretch uses gcc 6.3.0
-
-Versioning has been a huge headache, and due to the fact that Yocto exists, I think that’s 
-just the way things are...
-
-Setting up a new system:
-Get debian buster amd64
-Make your user a superuser
-Install and set up git
-
-All told, I used VMWare on a Mac to do this.
+Each distro has it's quirks, and with Debian Stretch specifically I find in most cases the initial setup I need to 
+do after the "Wizard" is to [set up my user to be able to do sudo](https://linuxize.com/post/how-to-add-user-to-sudoers-in-debian/) 
+and `sudo apt-get install git` to get git, which are also two things you'll need to do to follow this tutorial.
 
 
 # Make an ALSA Toy
 
-Hosted here:
-https://github.com/jcampbellcodes/alsa-sweep
+Now that you are set up with a host environment, let's talk about writing a simple ALSA program that we can compile on it.
+At first, we will just compile this *on* the host, *for* the host, pretending the target doesn't exist. This gives us confidence
+that the program is actually working and producing some bloops. Check out the toy ALSA program [here](https://github.com/jcampbellcodes/alsa-sweep).
 
-Quickly go over what the program does
-The point of it in this article is just that its an API that can be useful for embedded linux audio apps, and it already exists on the beaglebone
-Consider something higher level like JACK or audio middleware layer
-Just wanted to have an example that uses an audio API and doesn’t just shell out
-Alsa still needs multiarch to cross compile so it is ironically a simple example
+You can clone and build the project like so from the command line:
 
-Compile your program on the host first to make sure it is all set
-Just uses a makefile, since that can be extrapolated to figure out what to do with CMake or other build systems. The main point is that your build script doesn’t assume a compiler, so that you can use CC or CXX to switch out the host compiler for your cross compile toolchain
+```
+cd ~ # optional, navigate wherever you like
 
+git clone https://github.com/jcampbellcodes/alsa-sweep.git
+
+cd alsa-sweep
+
+make
+```
+
+This project uses `make`, but the following guidelines will apply to `CMake` and other build systems as well.
+Since `CMake`/`make` are used by many IDEs, you should also be able to extrapolate these guidelines to getting set up
+with an IDE to do this stuff. The main point is that none of your build scripts should assume a compiler. Use variables 
+like ${CC} for C compiler commands and ${CXX} for C++ so that you can use the same build scripts to work with your host
+compile toolchain as well as your cross-compiler, which instead of `g++` will be something like `arm-linux-gnueabihf-g++`.
+
+## What does the program do?
+
+Ironically, I don't think the mechanics of this program are directly the main idea. Mainly, I chose ALSA because it
+is a prevalent and low-level API that will be easy to use as an example for cross-compiling with Debian multi-arch,
+since you will need to install the armhf version when we get to cross compilation.
+
+But in short, this is a small ALSA program that: 
+- Opens the default sound device (check out which sound devices you have available by running `aplay -L` from the
+command line) and get a handle to it:
+```
+snd_pcm_open(&handle, gDevice, SND_PCM_STREAM_PLAYBACK, 0)
+```
+
+- Sets the hardware and software parameters for the device:
+```
+snd_pcm_set_params( handle,
+                    SND_PCM_FORMAT_FLOAT, // this determines the data type of the audio calculation below
+                    SND_PCM_ACCESS_RW_INTERLEAVED,
+                    gNumChans,
+                    gSampleRate,
+                    1, // allow resampling
+                    500000)
+```
+- Generates some audio into `float buffer [gBufferLen];` (a triangle wave that slides up and down, because why not)
+- Writes that buffer to the device using the handle:
+```
+snd_pcm_writei(handle, buffer, gBufferLen);
+```
+
+- And closes the device at the end:
+```
+snd_pcm_close(handle);
+```
+
+ALSA is a good API to know if you are going to be working on audio in Linux, however there are higher level APIs
+such as [JACK](https://jackaudio.org/) you should consider that can make your life easier for making actual products.
+
+There is a succint but [useful writeup](http://equalarea.com/paul/alsa-audio.html) by the creator of JACK on how to 
+get started with simple ALSA applications, as well as [this article](https://soundprogramming.net/programming/alsa-tutorial-1-initialization/).
+
+If you got through this and your computer did some sounds, then you are ready to move on to compiling the 
+program for your embedded board!
 
 # Cross Compilation
 
