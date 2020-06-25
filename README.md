@@ -54,7 +54,7 @@ we need to set up a "cross compilation" environment, allowing you to compile you
 Note that cross compilation isn't strictly necessary to develop  applications for embedded Linux - another option is to "compile on target", 
 which means you connect to your embedded device over SSH/UART/etc and use `gcc` on the board to compile it there directly. This is, in general,
 leagues simpler than cross-compilation, but for larger codebases the process may be time-prohibitive (one time my poor Beaglebone spent 20+ 
-hours compiling an audio engine) or there might simply not be enough memory on the device, causing `gcc` to error out. That's definitely not the case with the 
+hours compiling OpenSSL and curl) or there might simply not be enough memory on the device, causing `gcc` to error out. That's definitely not the case with the 
 toy program in this article, but I wanted to describe how to cross compile anyhow so you can apply this process to
 work with larger audio applications. It may help to learn more about cross compiling [here](https://landley.net/writing/docs/cross-compiling.html).
 
@@ -79,6 +79,7 @@ it worked to specifically use Debian Stretch, since that was installed on my Bea
 Debian Buster (10) and couldn't find a clean way to get multi-arch support for armhf with the specific version of
 gcc I needed (6.3.0), and so my program failed to run on the board. I have a gut feeling that I should have been able to
 make this work with Debian Buster (or any Linux distro) so feel free to reach out if you have recommendations!
+But for now, my approach is just to use the same Linux distro on the host as the board has if possible.
 
 So: assuming you have Debian Stretch on your Beaglebone, go get an [amd64 image of Debian Stretch](https://www.debian.org/distrib/netinst#smallcd)
 and install it either in a [virtual machine](https://www.virtualbox.org/) or natively if you are so inclined.
