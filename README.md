@@ -77,15 +77,16 @@ One other consideration to take into account which distro you have on the target
 cross toolchain for an older compiler can be a pain. Tools like Yocto and Docker can make this aspect more manageable, but for me
 it worked to specifically use Debian Stretch, since that was installed on my Beaglebone as well -- originally I was using 
 Debian Buster (10) and couldn't find a clean way to get multi-arch support for armhf with the specific version of
-gcc I needed (6.3.0), and so my program failed to run on the board. I have a gut feeling that I should have been able to
-make this work with Debian Buster (or any Linux distro) so feel free to reach out if you have recommendations!
-But for now, my approach is just to use the same Linux distro on the host as the board has if possible.
+gcc I needed (6.3.0), and so my program [failed at runtime on the board](https://stackoverflow.com/questions/35133695/glibc-version-mismatch). 
+I have a gut feeling that I should have been able to make this work with Debian Buster (or any Linux distro) so 
+feel free to reach out if you have recommendations! But for now, my approach is just to use the same Linux distro on 
+the host as the board has if possible.
 
 So: assuming you have Debian Stretch on your Beaglebone, go get an [amd64 image of Debian Stretch](https://www.debian.org/distrib/netinst#smallcd)
 and install it either in a [virtual machine](https://www.virtualbox.org/) or natively if you are so inclined.
 
 Each distro has it's quirks, and with Debian Stretch specifically I find in most cases the initial setup I need to 
-do after the "Wizard" is to [set up my user to be able to do sudo](https://linuxize.com/post/how-to-add-user-to-sudoers-in-debian/) 
+do after the "Wizard" in order to do anything useful is to [set up my user to be able to do sudo](https://linuxize.com/post/how-to-add-user-to-sudoers-in-debian/) 
 and `sudo apt-get install git` to get git, which are also two things you'll need to do to follow this tutorial.
 
 
@@ -105,23 +106,27 @@ git clone https://github.com/jcampbellcodes/alsa-sweep.git
 cd alsa-sweep
 
 make
+
+./booper # run the output program, named booper
 ```
 
 This project uses `make`, but the following guidelines will apply to `CMake` and other build systems as well.
 Since `CMake`/`make` are used by many IDEs, you should also be able to extrapolate these guidelines to getting set up
 with an IDE to do this stuff. The main point is that none of your build scripts should assume a compiler. Use variables 
-like ${CC} for C compiler commands and ${CXX} for C++ so that you can use the same build scripts to work with your host
+like `${CC}` for C compiler commands and `${CXX}` for C++ so that you can use the same build scripts to work with your host
 compile toolchain as well as your cross-compiler, which instead of `g++` will be something like `arm-linux-gnueabihf-g++`.
 
 ## What does the program do?
 
-Ironically, I don't think the mechanics of this program are directly the main idea. Mainly, I chose ALSA because it
-is a prevalent and low-level API that will be easy to use as an example for cross-compiling with Debian multi-arch,
-since you will need to install the armhf version when we get to cross compilation.
+The goal of this program in this article is just to write enough ALSA code to do something mildly amusing with audio so we have something
+to compile for our device. I chose ALSA over other Linux audio APIs because it is a prevalent and low-level API that will 
+be easy to use as an example for cross-compiling with Debian multi-arch, since you will need to install the armhf version 
+when we get to cross compilation without disturbing your native ALSA libs. From here you can go read more about ALSA 
+or other APIs to write programs that are closer to things you actually want to make.
 
-But in short, this is a small ALSA program that: 
+But in short, here is breakdown of the script: 
 - Opens the default sound device (check out which sound devices you have available by running `aplay -L` from the
-command line) and get a handle to it:
+command line; `default` or `plughw:0,0` are fairly standard) and get a handle to it:
 ```
 snd_pcm_open(&handle, gDevice, SND_PCM_STREAM_PLAYBACK, 0)
 ```
@@ -158,36 +163,92 @@ program for your embedded board!
 
 # Cross Compilation
 
-What is a cross compile toolchain?
+So far when building this program using the `makefile`, you have just been using the host compiler `g++` to build the program
+to run on the host machine. As threatened above, to compile for your ARM target device (Beaglebone), you will need to switch out
+`g++` with a compiler for ARMv7l, `arm-linux-gnueabihf-g++`. In reality, you will need more than just the compiler -- your compiler will
+also need the corresponding ARM-specific headers, libraries, linker, and even debugger. All these components make up the "cross-compile toolchain".
 
-Note that this program is small enough that you really could compile it “on target” by moving over the sources to the board. But I personally had a project I wanted to cross compile
+## Which toolchain do I need?
 
-## Set up the toolchain
 
-Install cross toolchain stuff:
-Determine your architecture
-Research the board. Run a command. For beaglebone it’s armhf
-Describe rpi?
+Before you can set up the toolchain on your host, you need to determine the architecture of your embedded device so you can get the right tools.
+The same cross toolchain won't work, for example, for ARMv7l (armhf, armv7l) and ARMv8 (arm64, aarch64) devices. You can find out the architecture by logging
+on to your device and running:
+
+``` 
+:~$ dpkg --print-architecture
+armhf
+```
+
+This can change depending on your OS support, and the nomenclature starts to get confusing and historical. For example, the Raspberry Pi 4 is a 
+64-bit device, but at the time of writing, the official Raspbian OS only supports 32-bit architectures, so you'll still see `armv7l` when 
+checking the architecture; however, other community OSes on the Rpi4 support `aarch64`, a 64-bit ARM architecture. On the Beaglebone Black, you'll
+see `armhf`, which is still 32-bit ARMv7l, but includes the hardware floating-point (hard-float, or hf) support.
+
+That's a long-winded way to say it's worth spending the extra time to find exactly which architecture your board supports and choosing the correct
+toolchain before diving in. 
+
+## Install the toolchain
+
+Once you determine the relevant ARM architecture of your target, you need to get the relevant toolchain. For Beaglebone Black, as stated earlier,
+this architecture is `armhf`. On Debian, you can install multi arch support lke so:
+
 ```
 sudo dpkg --add-architecture armhf
 sudo apt update 
 sudo apt install crossbuild-essential-armhf
+```
+
+Now you have a cross compiler installed. Remember the prefix `arm-linux-gnueabihf-`, because it will now pop up often when using this toolchain in 
+various contexts (environment variables, command line options, system directories, etc).
+
+Then whenever you want to apt-get a library to use for compilation, you can specify that you want to install the `armhf` version using multiarch
+syntax `:armhf`:
+```
 sudo apt install <libname>:armhf
 ```
-get alsa
-`sudo apt-get install libasound2-dev:armhf`
-Sometimes for libs you may need to compile yourself.
-Do the correct configure, make, make install
 
+For this program, we need to install the `armhf` version of the ALSA libs:
 
-## Compile the program
+```
+sudo apt-get install libasound2-dev:armhf
+```
 
-ADAPT this code to use the cmake stuff obvs, rather than pac.
-My code just needs CXX, but including the CC line as well since you might need that if you are compiling 
-C programs
+Note that not all `apt` packages have "multi-arch" support. For example, as of this writing, [OpenSSL does not have this support](https://stackoverflow.com/questions/25530429/build-multiarch-openssl-on-os-x) and you may have to download  the source and build the library yourself. Each library may have its own quirks, so you may have to play around with supplying cross-compilers and other options to the various stages of the build. If you haven't built a Linux-sstyle lib before, read about the [configure, make, make install](https://thoughtbot.com/blog/the-magic-behind-configure-make-make-install) paradigm, because you will likely need to inject your cross compiler into these different stages.
+This is one scenario where you would be using the `arm-linux-gnueabihf-` a lot.
+
+But you don't have to worry about this with ALSA specifically, so now you should be all set to cross compile this program!
+
+## Let's cross compile
+
+With your cross compiler in place, all you need to do to compile for the Beaglebone is specify the environment variables
+to use that compiler with our make file.
+
+First get back into the source dir, as a reminder:
+```
+cd ~ # optional, navigate wherever you like
+
+git clone https://github.com/jcampbellcodes/alsa-sweep.git # if you haven't cloned it yet or didn't do the host compilation section above
+
+cd alsa-sweep
+```
+
+This program only uses C++, but for completeness, here is how you specify both the C and C++ cross compilers when calling make
+
+```
 `CC=arm-linux-gnueabihf-gcc CXX=arm-linux-gnueabihf-g++ make`
 
- NOTE: may have to chmod +x when it’s on the board
+./booper # this should fail on your host, because you can't run ARM executables on amd64!
+
+file booper
+```
+
+Should see output about the file that says it is a 32-bit ARM executable:
+```
+booper: ELF 32-bit LSB shared object ARM, EABI5 version 1 (SYSV), dynamically linked, interpreter /lib/ld-, for GNU/Linux 3.2.0, BuildID[sha1]=3327c30466b814b5db2ff40f8b60444583c9afe6, not stripped
+```
+
+Now you've got your executable! Save it off to the side; time to set up your board.
 
 # Set up the Beaglebone Black
 
@@ -216,5 +277,5 @@ VC3V3               P9_03
 # Make a sound!
 
 - install your program with scp
-- might have to chmod it
+- might have to chmod +x it
 - run an you should hear the siren!
