@@ -5,7 +5,7 @@
 constexpr int gBufferLen = 8000;
 constexpr unsigned int gNumChans = 1;
 constexpr unsigned int gSampleRate = 48000.0;
-constexpr const char *gDevice = "default";
+constexpr const char *gDevice = "plughw:0,0";
 constexpr float gTwoPi = 2.0 * M_PI;
 
 int main()
@@ -27,7 +27,7 @@ int main()
     // that take "params" structs if you need more fine grained configurations
     printf("setting params\n");
     if ((err = snd_pcm_set_params(handle,
-                            SND_PCM_FORMAT_FLOAT, // this determines the data type of the audio calculation below
+                            SND_PCM_FORMAT_FLOAT_LE, // this determines the data type of the audio calculation below
                             SND_PCM_ACCESS_RW_INTERLEAVED,
                             gNumChans,
                             gSampleRate,
